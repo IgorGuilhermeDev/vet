@@ -9,8 +9,50 @@ services:
       POSTGRES_PASSWORD: password
       POSTGRES_DB: db
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:23.0.6
+    container_name: keycloak-inst-vet
+    env_file:
+      - ./.env
+    volumes:
+      - ./dataprovider/keycloak/import:/tmp/realms
+    entrypoint: [ "/opt/keycloak/bin/kc.sh", "start-dev" ]
+    environment:
+      - ENV KC_HEALTH_ENABLED=true
+      - KEYCLOAK_HOME=/opt/keycloak
+      - ADDITIONAL_PATH=$KEYCLOAK_HOME/bin
+    healthcheck:
+      test: ['CMD-SHELL', '[ -f /tmp/HealthCheck.java ] || echo "public class HealthCheck { public static void main(String[] args) throws java.lang.Throwable { System.exit(java.net.HttpURLConnection.HTTP_OK == ((java.net.HttpURLConnection)new java.net.URL(args[0]).openConnection()).getResponseCode() ? 0 : 1); } }" > /tmp/HealthCheck.java && java /tmp/HealthCheck.java http://localhost:8080/health/live']
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    ports:
+      - "8081:8080"
+    depends_on:
+      - keycloak-postgres-vet
+    networks:
+      - keycloak-postgres-network-vet
+
+  keycloak-postgres-vet:
+    image: postgres:16.2-alpine3.19
+    container_name: keycloak-db-inst-vet
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: keycloak-db-vet
+    volumes:
+      - ${DOCKER_KEYCLOAK_DB_VOLUME}:/var/lib/postgresql/data
+    networks:
+      - keycloak-postgres-network-vet
 volumes:
   postgres_data:
+
+networks:
+  keycloak-postgres-network-vet:
+    driver: bridge
